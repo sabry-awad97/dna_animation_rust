@@ -1,55 +1,35 @@
-use rand::Rng;
-use std::{thread, time};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
-const PAUSE: u64 = 150;
-const ROWS: [&str; 18] = [
-    "         ##",
-    "        #{}-{}#",
-    "       #{}---{}#",
-    "      #{}-----{}#",
-    "     #{}------{}#",
-    "    #{}------{}#",
-    "    #{}-----{}#",
-    "     #{}---{}#",
-    "     #{}-{}#",
-    "      ##",
-    "     #{}-{}#",
-    "     #{}---{}#",
-    "    #{}-----{}#",
-    "    #{}------{}#",
-    "     #{}------{}#",
-    "      #{}-----{}#",
-    "       #{}---{}#",
-    "        #{}-{}#",
-];
-
-struct DnaAnimation {}
+struct DnaAnimation {
+    pause: Duration,
+    rows: [&'static str; 18],
+}
 
 impl DnaAnimation {
-    fn animate(&self) {
+    fn animate(&self, running: &AtomicBool) {
         let mut row_index = 0;
-        loop {
-            row_index = (row_index + 1) % ROWS.len();
+        while running.load(Ordering::SeqCst) {
+            row_index = (row_index + 1) % self.rows.len();
 
-            if row_index == 0 || row_index == 9 {
-                println!("{}", ROWS[row_index]);
-                continue;
-            }
-
-            let (left_nucleotide, right_nucleotide) = match rand::thread_rng().gen_range(1..5) {
-                1 => ("A", "T"),
-                2 => ("T", "A"),
-                3 => ("C", "G"),
-                _ => ("G", "C"),
+            let row = if row_index == 0 || row_index == 9 {
+                self.rows[row_index].to_owned()
+            } else {
+                let n = match rand::random::<u8>() % 4 {
+                    0 => ('A', 'T'),
+                    1 => ('T', 'A'),
+                    2 => ('C', 'G'),
+                    3 => ('G', 'C'),
+                    _ => unreachable!(),
+                };
+                self.rows[row_index]
+                    .replace("{}", &n.0.to_string())
+                    .replace("{}", &n.1.to_string())
             };
-
-            println!(
-                "{}",
-                ROWS[row_index]
-                    .replace("{}", &left_nucleotide)
-                    .replace("{}", &right_nucleotide)
-            );
-            thread::sleep(time::Duration::from_millis(PAUSE));
+            println!("{}", row);
+            thread::sleep(self.pause);
         }
     }
 }
@@ -58,5 +38,43 @@ fn main() {
     println!("DNA Animation");
     println!("Press Ctrl-C to quit...");
 
-    DnaAnimation {}.animate();
+    let dna = DnaAnimation {
+        pause: Duration::from_millis(150),
+        rows: [
+            "         ##",
+            "        #{}-{}#",
+            "       #{}---{}#",
+            "      #{}-----{}#",
+            "     #{}------{}#",
+            "    #{}------{}#",
+            "    #{}-----{}#",
+            "     #{}---{}#",
+            "     #{}-{}#",
+            "      ##",
+            "     #{}-{}#",
+            "     #{}---{}#",
+            "    #{}-----{}#",
+            "    #{}------{}#",
+            "     #{}------{}#",
+            "      #{}-----{}#",
+            "       #{}---{}#",
+            "        #{}-{}#",
+        ],
+    };
+
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    println!("DNA Animation");
+    println!("Press Ctrl-C to quit...");
+
+    let handle = thread::spawn(move || {
+        dna.animate(&running);
+    });
+
+    handle.join().expect("Error running DNA animation");
 }
